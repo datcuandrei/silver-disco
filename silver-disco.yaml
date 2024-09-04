@@ -4,11 +4,14 @@
   - name: silver-disco
     hosts: all
     become: yes
-    httpd_location: "{{'/etc/apache2/apache2.conf' if ansible_facts[‘os_family’] == 'Debian' else '/etc/httpd/httpd.conf'}}"
-    # --->
-    # Identify httpd version and apply correct config file
-    # <---
+    httpd_location: "{{'/etc/apache2/apache2.conf' if ansible_facts[‘os_family’] == 'Debian' else '/etc/httpd/httpd.conf'}}"    
     tasks:
+      - name: Identifying Apache Web Server version...
+        ansible.builtin.shell:
+          cmd: apachectl -v | head -n 1 | cut -d '/' -f2 | cut -d '(' -f1 | xargs
+          register: httpd_ver
+          warn: false
+          ignore_errors: true
       - name: Hardening Apache Web Server...
         ansible.builtin.lineinfile:
           path: '{{ httpd_location }}'
@@ -23,3 +26,7 @@
           prepend_newline: true
           block: "{{ lookup('ansible.builtin.file', './sshd_config') }}"
           validate: /bin/bash -c 'sshd -T'
+      - name: Testing with nmap...
+        ansible.builtin.shell:
+          cmd: nmap --script ssl-enum-ciphers -p 80,443 127.0.0.1 && nmap --script ssh2-enum-algos -p 22 127.0.0.1
+          warn: false
