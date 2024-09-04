@@ -1,0 +1,25 @@
+---
+# Note that this project is very early work in progress!!
+# It may or may not work.
+  - name: silver-disco
+    hosts: all
+    become: yes
+    httpd_location: "{{'/etc/apache2/apache2.conf' if ansible_facts[‘os_family’] == 'Debian' else '/etc/httpd/httpd.conf'}}"
+    # --->
+    # Identify httpd version and apply correct config file
+    # <---
+    tasks:
+      - name: Hardening Apache Web Server...
+        ansible.builtin.lineinfile:
+          path: '{{ httpd_location }}'
+          append_newline: true
+          prepend_newline: true
+          block: "{{ lookup('ansible.builtin.file', './httpd.conf') }}" # <-- instead of httpd.conf, there will be a conf for each required version
+          validate: /bin/bash -c 'apachectl configtest'
+      - name: Hardening OpenSSH Config...
+        ansible.builtin.blockinfile:
+          path: '/etc/ssh/sshd_config'
+          append_newline: true
+          prepend_newline: true
+          block: "{{ lookup('ansible.builtin.file', './sshd_config') }}"
+          validate: /bin/bash -c 'sshd -T'
