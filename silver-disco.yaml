@@ -6,18 +6,25 @@
     become: yes
     httpd_location: "{{'/etc/apache2/apache2.conf' if ansible_facts[‘os_family’] == 'Debian' else '/etc/httpd/httpd.conf'}}"    
     tasks:
-      - name: Identifying Apache Web Server version...
+      - name: Registering Apache Web Server version variable...
         ansible.builtin.shell:
           cmd: apachectl -v | head -n 1 | cut -d '/' -f2 | cut -d '(' -f1 | xargs
           register: httpd_ver
           warn: false
           ignore_errors: true
+      - name: Checking if the version of Apache Web Server is compatible...
+        ansible.builtin.fail:
+          msg: | 
+          The version of Apache Web Server currently installed is not compatible.
+          Your current version is {{ httpd_ver }}.
+          The required version needs to be >= 2.4.36
+        when: httpd_ver is version('2.4.36', '>=')
       - name: Hardening Apache Web Server...
         ansible.builtin.lineinfile:
           path: '{{ httpd_location }}'
           append_newline: true
           prepend_newline: true
-          block: "{{ lookup('ansible.builtin.file', './httpd.conf') }}" # <-- instead of httpd.conf, there will be a conf for each required version
+          block: "{{ lookup('ansible.builtin.file', './httpd.conf') }}"
           validate: /bin/bash -c 'apachectl configtest'
       - name: Hardening OpenSSH Config...
         ansible.builtin.blockinfile:
