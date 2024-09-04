@@ -4,36 +4,62 @@
   - name: silver-disco
     hosts: all
     become: yes
+    httpd_pkg_name: "{{'apache2' if ansible_facts[‘os_family’] == 'Debian' else 'httpd'}}"    
     httpd_location: "{{'/etc/apache2/apache2.conf' if ansible_facts[‘os_family’] == 'Debian' else '/etc/httpd/httpd.conf'}}"    
     tasks:
-      - name: Registering Apache Web Server version variable...
-        ansible.builtin.shell:
-          cmd: apachectl -v | head -n 1 | cut -d '/' -f2 | cut -d '(' -f1 | xargs
-          register: httpd_ver
-          warn: false
-          ignore_errors: true
-      - name: Checking if the version of Apache Web Server is compatible...
-        ansible.builtin.fail:
-          msg: | 
-          The version of Apache Web Server currently installed is not compatible.
-          Your current version is {{ httpd_ver }}.
-          The required version needs to be >= 2.4.36
-        when: httpd_ver is version('2.4.36', '>=')
+      - name: Checking which binaries are installed or compatible...
+        ansible.builtin.package_facts:
+          manager: auto
+        block:
+          - name: Checking if Apache Web Server is applicable...
+            ansible.builtin.debug:
+              msg: Apache Web Server is applicable.
+              set_fact:
+                httpd_installed: true
+            when: "httpd_pkg_name in ansible_facts.packages and ansible_facts.packages[httpd_pkg_name].version is version('2.4.36', '>=')"
+          - name: Checking if OpenSSL is applicable...
+            ansible.builtin.debug:
+              msg: OpenSSL is applicable.
+              set_fact:
+                openssl_installed: true
+            when: "'openssl' in ansible_facts.packages and ansible_facts.packages['openssl'].version is version('1.1.1', '>=')"
+          - name: Checking if OpenSSH Server is applicable...
+            ansible.builtin.debug:
+              msg: OpenSSH Server is applicable.
+              set_fact:
+                openssh_srv_installed: true
+            when: "'openssh-server' in ansible_facts.packages"
+          - name: Checking if OpenSSH Client is applicable...
+            ansible.builtin.debug:
+              msg: OpenSSH Client is applicable.
+              set_fact:
+                openssh_cln_installed: true
+            when: "'openssh-client' in ansible_facts.packages"
+            
       - name: Hardening Apache Web Server...
+        when: httpd_installed and openssl_installed
         ansible.builtin.lineinfile:
           path: '{{ httpd_location }}'
           append_newline: true
           prepend_newline: true
           block: "{{ lookup('ansible.builtin.file', './httpd.conf') }}"
-          validate: /bin/bash -c 'apachectl configtest'
-      - name: Hardening OpenSSH Config...
+          validate: /bin/bash -c 'apachectl configtest'    
+      - name: Hardening OpenSSH Server Config...
+        when: openssh_srv_installed
         ansible.builtin.blockinfile:
           path: '/etc/ssh/sshd_config'
           append_newline: true
           prepend_newline: true
           block: "{{ lookup('ansible.builtin.file', './sshd_config') }}"
           validate: /bin/bash -c 'sshd -T'
-      - name: Testing with nmap...
+      - name: Hardening OpenSSH Client Config...
+        when: openssh_cln_installed
+        ansible.builtin.blockinfile:
+          path: '/etc/ssh/ssh_config'
+          append_newline: true
+          prepend_newline: true
+          block: "{{ lookup('ansible.builtin.file', './ssh_config') }}"
+      - name: PCI results with nmap...
         ansible.builtin.shell:
           cmd: nmap --script ssl-enum-ciphers -p 80,443 127.0.0.1 && nmap --script ssh2-enum-algos -p 22 127.0.0.1
           warn: false
